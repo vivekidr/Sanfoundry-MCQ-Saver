@@ -1,8 +1,8 @@
 import pdfplumber
 import csv
-import sys
 import os
 import re
+import pandas as pd
 
 def extract_text_from_pdf(pdf_path):
     """Extracts text from a PDF file."""
@@ -36,7 +36,6 @@ def parse_mcqs(text):
         q_match = question_pattern.match(line)
         if q_match:
             if current_question:
-                # Save the previous question
                 questions.append([
                     current_question.strip(),
                     current_choices.get("a", "").strip(),
@@ -80,45 +79,59 @@ def parse_mcqs(text):
 
     return questions
 
-def save_to_csv(data, csv_path):
+def save_to_csv(data, csv_path, topic_name):
     """Saves the extracted MCQs to a CSV file."""
     with open(csv_path, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
-        writer.writerow(["Question", "Option A", "Option B", "Option C", "Option D", "Answer"])
-        writer.writerows(data)
+        writer.writerow(["Topic", "Question", "Option A", "Option B", "Option C", "Option D", "Answer"])
+        for row in data:
+            writer.writerow([topic_name] + row)
 
-def main():
-    """Main function to handle CLI input and process the PDF."""
-    if len(sys.argv) != 2:
-        print("Usage: python pdf_to_csv.py <pdf_path>")
-        sys.exit(1)
+def process_all_pdfs(pdf_folder, output_folder):
+    """Processes each PDF file separately and saves topic-wise CSVs."""
+    check_dir(output_folder)
 
-    pdf_path = sys.argv[1]
-    
-    if not os.path.exists(pdf_path):
-        print(f"Error: File '{pdf_path}' not found.")
-        sys.exit(1)
+    all_data = []
 
-    csv_path = os.path.splitext(pdf_path)[0] + ".csv"
-    
-    print(f"Extracting text from: {pdf_path}")
-    text = extract_text_from_pdf(pdf_path)
+    for pdf_file in os.listdir(pdf_folder):
+        if pdf_file.endswith(".pdf"):
+            pdf_path = os.path.join(pdf_folder, pdf_file)
+            topic_name = os.path.splitext(pdf_file)[0]
+            csv_path = os.path.join(output_folder, f"{topic_name}.csv")
 
-    if not text.strip():
-        print("No text extracted from the PDF. Please check the file.")
-        sys.exit(1)
-    
-    print("Parsing questions...")
-    questions = parse_mcqs(text)
+            print(f"Extracting text from: {pdf_file}")
+            text = extract_text_from_pdf(pdf_path)
 
-    if not questions:
-        print("No questions found. Check the PDF format.")
-        sys.exit(1)
+            if not text.strip():
+                print(f"No text extracted from {pdf_file}. Skipping.")
+                continue
 
-    print(f"Saving data to CSV: {csv_path}")
-    save_to_csv(questions, csv_path)
+            print(f"Parsing questions from {pdf_file}...")
+            questions = parse_mcqs(text)
 
-    print("Conversion completed successfully!")
+            if not questions:
+                print(f"No questions found in {pdf_file}. Skipping.")
+                continue
+
+            print(f"Saving data to CSV: {csv_path}")
+            save_to_csv(questions, csv_path, topic_name)
+
+            # Append to combined data
+            for row in questions:
+                all_data.append([topic_name] + row)
+
+    # Save combined CSV
+    combined_csv_path = os.path.join(output_folder, "all_topics.csv")
+    print(f"Saving all topics data to: {combined_csv_path}")
+    pd.DataFrame(all_data, columns=["Topic", "Question", "Option A", "Option B", "Option C", "Option D", "Answer"]).to_csv(combined_csv_path, index=False)
+
+def check_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 
 if __name__ == "__main__":
-    main()
+    PDF_FOLDER = "SanfoundryFiles/"
+    OUTPUT_FOLDER = "Processed_CSVs/"
+    
+    process_all_pdfs(PDF_FOLDER, OUTPUT_FOLDER)
+    print("Processing completed successfully!")
